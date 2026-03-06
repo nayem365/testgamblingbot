@@ -32,6 +32,7 @@ async function saveUser(userData) {
             { 
                 $set: {
                     ...userData,
+                    username: userData.username || null,
                     createdAt: new Date(),
                     updatedAt: new Date()
                 }
@@ -146,6 +147,6 @@ module.exports = {
     saveSubmission,
     updateSubmissionStatus,
     getAllUsers,
-    getSubmissionStats,  // Add this line
+    getSubmissionStats,
     closeDB
 };
