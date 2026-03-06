@@ -1,5 +1,5 @@
 // ============================================
-// index.js - Main Bot Entry Point
+// index.js - Main Bot Entry Point (UPDATED with Username & Case ID)
 // ============================================
 
 require('dotenv').config();
@@ -81,12 +81,22 @@ const clearSession = (userId) => {
 };
 
 // ============================================
-// START COMMAND & PHONE COLLECTION
+// Helper function to generate Case ID
+// ============================================
+function generateCaseId() {
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `CASE-${timestamp}-${random}`;
+}
+
+// ============================================
+// START COMMAND & PHONE COLLECTION (UPDATED)
 // ============================================
 
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const userName = ctx.from.first_name || ctx.from.username || 'User';
+    const username = ctx.from.username || null;
     
     clearSession(userId);
     
@@ -99,6 +109,7 @@ bot.start(async (ctx) => {
     const session = getSession(userId);
     session.state = 'waiting_phone';
     session.data.name = userName;
+    session.data.username = username;
     
     await ctx.reply(
         'Hello! Welcome to 7Starswin Bot! 🎰\n\n' +
@@ -109,7 +120,7 @@ bot.start(async (ctx) => {
     );
 });
 
-// Handle phone number sharing
+// Handle phone number sharing (UPDATED)
 bot.on('contact', async (ctx) => {
     const userId = ctx.from.id;
     const session = getSession(userId);
@@ -118,14 +129,16 @@ bot.on('contact', async (ctx) => {
     
     const phone = ctx.message.contact.phone_number;
     const name = ctx.from.first_name || ctx.from.username || 'User';
+    const username = ctx.from.username || null;
     
     // Save phone to session and database
     session.data.phone = phone;
-    await saveUser({ userId, name, phone });
+    await saveUser({ userId, name, phone, username });
     
     // Notify admins
     const adminMessage = `📞 New User Registration\n\n` +
         `Name: ${name}\n` +
+        `Username: ${username ? `@${username}` : 'No username'}\n` +
         `User ID: ${userId}\n` +
         `Phone: ${phone}\n` +
         `Date: ${new Date().toLocaleString()}`;
@@ -191,7 +204,6 @@ bot.action(/bot_lang_(.+)/, async (ctx) => {
     await ctx.reply('Language selected! ✅');
     await showMainMenu(ctx, language);
 });
-
 
 // Handle text input for forms
 bot.on('text', async (ctx, next) => {
@@ -771,19 +783,34 @@ bot.action('in_paytmupi', async (ctx) => {
     }
 });
 
+// UPDATED: submitPlayerRequest function with username and case ID
 async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
     const userId = ctx.from.id;
     const userData = await getUserData(userId);
     const texts = loadLanguage(userData?.language || 'en');
 
+    // Prevent duplicate submissions
+    if (session.submitting) {
+        return;
+    }
+    session.submitting = true;
+
     try {
+        // Generate both Request Number and Case ID
         const requestNumber = generateRequestNumber();
+        const caseId = generateCaseId();
         session.data.requestNumber = requestNumber;
+        session.data.caseId = caseId;
+
+        // Get username if available
+        const username = ctx.from.username ? `@${ctx.from.username}` : 'Not provided';
 
         await saveSubmission({
             userId,
+            username: ctx.from.username || null,
             type: 'player',
             requestNumber,
+            caseId,
             data: session.data,
             status: 'pending'
         });
@@ -795,9 +822,12 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
             ]
         ]);
 
-        let adminMessage = `👤 **New ${session.data.issueType} Request #${requestNumber}**\n\n` +
+        let adminMessage = `👤 **New ${session.data.issueType} Request**\n\n` +
+            `**Case ID:** \`${caseId}\`\n` +
+            `**Request #:** ${requestNumber}\n` +
             `**User:** ${userData?.name || 'Unknown'}\n` +
-            `**User ID (Telegram):** ${userId}\n` +
+            `**Username:** ${username}\n` +
+            `**User ID:** \`${userId}\`\n` +
             `**Country:** ${session.data.country || 'Unknown'}\n` +
             `**Payment System:** ${session.data.paymentSystem}\n` +
             `**Language:** ${session.data.language.toUpperCase()}\n` +
@@ -805,7 +835,7 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
 
         // Add all fields dynamically
         for (const [key, val] of Object.entries(session.data)) {
-            if (['fileId', 'language', 'type', 'requestNumber'].includes(key)) continue;
+            if (['fileId', 'language', 'type', 'requestNumber', 'caseId'].includes(key)) continue;
             adminMessage += `**${key}:** ${val}\n`;
         }
 
@@ -843,9 +873,12 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
         ]);
 
         await ctx.reply(
-            `✅ **${texts.request_registered}** **${requestNumber}**\n\n` +
-            'Our admin team will respond to your request soon.\n\n' +
-            '📱 You will be notified here when there is an update.',
+            `✅ **${texts.request_registered}**\n\n` +
+            `**Request #:** ${requestNumber}\n` +
+            `**Case ID:** \`${caseId}\`\n\n` +
+            `Our admin team will respond to your request soon.\n\n` +
+            `📱 You will be notified here when there is an update.\n\n` +
+            `⚠️ **Please save your Case ID for future reference.**`,
             {
                 parse_mode: 'Markdown',
                 ...userKeyboard
@@ -855,6 +888,8 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
     } catch (error) {
         console.error('Player submission error:', error);
         await ctx.reply(`⚠️ Error submitting request. Please try again later.`);
+    } finally {
+        session.submitting = false;
     }
 }
 
@@ -1243,11 +1278,10 @@ bot.action(['date_header', 'day_header', 'empty_day'], async (ctx) => {
     await ctx.answerCbQuery();
 });
 
-// Player confirmation handlers
+// Player confirmation handlers (UPDATED to use the new submit function)
 bot.action('player_submit', async (ctx) => {
     try {
         const session = getSession(ctx.from.id);
-        const { submitPlayerRequest } = require('./flows/playerFlow');
         await submitPlayerRequest(ctx, session, bot, ADMIN_CHAT_IDS);
         clearSession(ctx.from.id);
     } catch (error) {
@@ -1277,18 +1311,31 @@ bot.action('settings_language', async (ctx) => {
     }
 });
 
-// Admin handlers for replies and resolving
+// UPDATED: Admin handlers for replies with username display
 bot.action(/admin_reply_(\d+)_(\d+)/, async (ctx) => {
     try {
         const targetUserId = ctx.match[1];
         const requestNumber = ctx.match[2];
         const session = getSession(ctx.from.id);
         
+        // Get user data to show username
+        const userData = await getUserData(parseInt(targetUserId));
+        const username = userData?.username ? `@${userData.username}` : 'No username';
+        
         session.state = 'admin_replying';
-        session.data = { targetUserId, requestNumber };
+        session.data = { 
+            targetUserId, 
+            requestNumber,
+            requestType: 'player'
+        };
         
         await ctx.reply(
-            `💬 **Admin Reply Mode**\n\nReplying to Request #${requestNumber}\nUser ID: ${targetUserId}\n\nType your message:`
+            `💬 **Admin Reply Mode**\n\n` +
+            `Replying to Request #${requestNumber}\n` +
+            `User: ${userData?.name || 'Unknown'}\n` +
+            `Username: ${username}\n` +
+            `User ID: ${targetUserId}\n\n` +
+            `Type your message:`
         );
     } catch (error) {
         console.error('Admin reply error:', error);
@@ -1371,18 +1418,31 @@ bot.action('admin_stats', async (ctx) => {
     }
 });
 
-// Admin reply handler for agent responses
+// UPDATED: Admin reply handler for agent responses with username
 bot.action(/admin_reply_(\d+)_agent_(.+)/, async (ctx) => {
     try {
         const targetUserId = ctx.match[1];
         const country = ctx.match[2];
         const session = getSession(ctx.from.id);
         
+        // Get user data to show username
+        const userData = await getUserData(parseInt(targetUserId));
+        const username = userData?.username ? `@${userData.username}` : 'No username';
+        
         session.state = 'admin_replying';
-        session.data = { targetUserId, requestType: 'agent', country };
+        session.data = { 
+            targetUserId, 
+            requestType: 'agent', 
+            country 
+        };
         
         await ctx.reply(
-            `💬 **Admin Reply Mode**\n\nReplying to Agent ${country} inquiry\nUser ID: ${targetUserId}\n\nType your message:`
+            `💬 **Admin Reply Mode**\n\n` +
+            `Replying to Agent ${country} inquiry\n` +
+            `User: ${userData?.name || 'Unknown'}\n` +
+            `Username: ${username}\n` +
+            `User ID: ${targetUserId}\n\n` +
+            `Type your message:`
         );
     } catch (error) {
         console.error('Admin reply error:', error);
@@ -1573,6 +1633,7 @@ bot.command('user', async (ctx) => {
         const userInfo = 
             `👤 **User Information**\n\n` +
             `**Name:** ${userData.name || 'N/A'}\n` +
+            `**Username:** ${userData.username ? `@${userData.username}` : 'N/A'}\n` +
             `**User ID:** ${userData.userId}\n` +
             `**Phone:** ${userData.phone || 'N/A'}\n` +
             `**Language:** ${(userData.language || 'en').toUpperCase()}\n` +
