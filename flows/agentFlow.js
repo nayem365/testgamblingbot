@@ -7,6 +7,15 @@ const { loadLanguage } = require('../utils/i18n');
 const { getUserData, saveSubmission } = require('../utils/db');
 const { logToAdmin, formatDate } = require('../utils/helpers');
 
+// ============================================
+// Helper function to generate Case ID for agent
+// ============================================
+function generateCaseId() {
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `AGENT-${timestamp}-${random}`;
+}
+
 async function agentFlow(ctx, bot, adminChatIds, getSession, clearSession) {
     const userId = ctx.from.id;
     const userData = await getUserData(userId);
@@ -114,6 +123,10 @@ async function handleAgentResponse(ctx, country, response, bot, adminChatIds) {
     const userData = await getUserData(userId);
     const texts = loadLanguage(userData?.language || 'en');
 
+    // Generate Case ID for agent inquiry
+    const caseId = generateCaseId();
+    const username = ctx.from.username ? `@${ctx.from.username}` : 'Not provided';
+
     const countryNames = {
         bangladesh: texts.bangladesh,
         india: texts.india,
@@ -126,10 +139,12 @@ async function handleAgentResponse(ctx, country, response, bot, adminChatIds) {
     const isInterested = response === 'accept';
 
     try {
-        // Save agent response to database
+        // Save agent response to database with case ID
         await saveSubmission({
             userId,
+            username: ctx.from.username || null,
             type: 'agent_response',
+            caseId,
             data: {
                 country: countryName,
                 response: response,
@@ -144,11 +159,13 @@ async function handleAgentResponse(ctx, country, response, bot, adminChatIds) {
             [Markup.button.callback('💬 Reply to User', `admin_reply_${userId}_agent_${country}`)]
         ]);
 
-        // Notify admin about agent response
+        // Notify admin about agent response with Case ID
         const adminMessage =
             `<b>🧑‍💼 Agent ${isInterested ? 'Interest' : 'Rejection'} - ${countryName}</b>\n\n` +
+            `<b>Case ID:</b> <code>${caseId}</code>\n` +
             `<b>User:</b> ${userData?.name || 'Unknown'}\n` +
-            `<b>User ID:</b> ${userId}\n` +
+            `<b>Username:</b> ${username}\n` +
+            `<b>User ID:</b> <code>${userId}</code>\n` +
             `<b>Country:</b> ${countryName}\n` +
             `<b>Response:</b> ${isInterested ? '✅ INTERESTED (Accepted)' : '❌ NOT INTERESTED (Rejected)'}\n` +
             `<b>Phone:</b> ${userData?.phone || 'Not provided'}\n` +
@@ -167,16 +184,18 @@ async function handleAgentResponse(ctx, country, response, bot, adminChatIds) {
             }
         }
 
-        // Response to user
+        // Response to user with Case ID
         let userMessage;
         let userKeyboard;
 
         if (isInterested) {
             userMessage =
                 `<b>✅ ${texts.agent_interest_registered}</b>\n\n` +
+                `<b>Case ID:</b> <code>${caseId}</code>\n\n` +
                 `${texts.thank_you_interest.replace('{country}', countryName)}\n\n` +
                 `👉 ${texts.team_contact_soon}\n\n` +
-                `${texts.manager_contact_info}`;
+                `${texts.manager_contact_info}\n\n` +
+                `⚠️ <b>Please save your Case ID for future reference.</b>`;
 
             userKeyboard = Markup.inlineKeyboard([
                 [Markup.button.url(texts.connect_with_manager, 'https://t.me/atikur_7starswin')],
@@ -185,6 +204,7 @@ async function handleAgentResponse(ctx, country, response, bot, adminChatIds) {
         } else {
             userMessage =
                 `<b>${texts.rejection_response_title}</b> ${texts.rejection_response_body}\n\n` +
+                `<b>Case ID:</b> <code>${caseId}</code>\n\n` +
                 `${texts.manager_anytime_contact}`;
 
             userKeyboard = Markup.inlineKeyboard([
@@ -209,6 +229,4 @@ module.exports = {
     showAgentDetails,
     showAgentConfirmation,
     handleAgentResponse
-
 };
-
