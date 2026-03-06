@@ -7,6 +7,15 @@ const { loadLanguage } = require('../utils/i18n');
 const { getUserData, saveSubmission } = require('../utils/db');
 const { validatePhone, logToAdmin, formatDate } = require('../utils/helpers');
 
+// ============================================
+// Helper function to generate Case ID
+// ============================================
+function generateCaseId() {
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `CASE-${timestamp}-${random}`;
+}
+
 async function playerFlow(ctx, bot, adminChatIds, getSession, clearSession) {
   const userId = ctx.from.id;
   const userData = await getUserData(userId);
@@ -418,15 +427,23 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
   session.submitting = true;
 
   try {
+    // Generate both Request Number and Case ID
     const requestNumber = generateRequestNumber();
+    const caseId = generateCaseId();
     session.data.requestNumber = requestNumber;
+    session.data.caseId = caseId;
+
+    // Get username if available
+    const username = ctx.from.username ? `@${ctx.from.username}` : 'Not provided';
 
     const userLanguage = userData?.language || session.data.language || 'en';
     
     await saveSubmission({
       userId,
+      username: ctx.from.username || null,
       type: 'player',
       requestNumber,
+      caseId,
       data: session.data,
       status: 'pending'
     });
@@ -439,9 +456,12 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
       ]
     ]);
 
-    let adminMessage = `👤 **New ${session.data.issueType} Request #${requestNumber}**\n\n` +
+    let adminMessage = `👤 **New ${session.data.issueType} Request**\n\n` +
+      `**Case ID:** \`${caseId}\`\n` +
+      `**Request #:** ${requestNumber}\n` +
       `**User:** ${userData?.name || 'Unknown'}\n` +
-      `**User ID (Telegram):** ${userId}\n` +
+      `**Username:** ${username}\n` +
+      `**User ID (Telegram):** \`${userId}\`\n` +
       `**Country:** ${session.data.country || 'Unknown'}\n` +
       `**Payment System:** ${session.data.paymentSystem}\n` +
       `**Language:** ${userLanguage.toUpperCase()}\n` +
@@ -449,7 +469,7 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
 
     // Add all fields dynamically
     for (const [key, val] of Object.entries(session.data)) {
-      if (['fileId', 'language', 'type', 'requestNumber'].includes(key)) continue;
+      if (['fileId', 'language', 'type', 'requestNumber', 'caseId'].includes(key)) continue;
       adminMessage += `**${key}:** ${val}\n`;
     }
 
@@ -485,10 +505,14 @@ async function submitPlayerRequest(ctx, session, bot, adminChatIds) {
       [Markup.button.callback(texts.main_menu, 'back_to_main')]
     ]);
 
+    // Enhanced user message with Case ID
     await ctx.reply(
-      `✅ **${texts.request_registered}** **${requestNumber}**\n\n` +
+      `✅ **${texts.request_registered}**\n\n` +
+      `**Request #:** ${requestNumber}\n` +
+      `**Case ID:** \`${caseId}\`\n\n` +
       `${texts.admin_team_response}\n\n` +
-      `📱 ${texts.notification_info}`,
+      `📱 ${texts.notification_info}\n\n` +
+      `⚠️ **Please save your Case ID for future reference.**`,
       {
         parse_mode: 'Markdown',
         ...userKeyboard
