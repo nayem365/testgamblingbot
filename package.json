@@ -1,0 +1,35 @@
+{
+  "name": "fs-promo-bot",
+  "version": "1.0.0",
+  "description": "Multi-role Telegram bot for FS promotions",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "mongodb": "^6.3.0",
+    "sharp": "^0.34.4",
+    "telegraf": "^4.15.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "promo",
+    "affiliate",
+    "agent",
+    "player"
+  ],
+  "author": "Your Name",
+  "license": "ISC"
+}
